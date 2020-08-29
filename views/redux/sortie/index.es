@@ -24,7 +24,7 @@ const initState = {
   spAttackUsed: false,
 }
 
-const ensureArray = x => (isArray(x) ? x : [x])
+const ensureArray = (x) => (isArray(x) ? x : [x])
 
 const getItem = ({ api_itemget = [], api_happening = {}, api_itemget_eo_comment = {} }) => {
   const item = {}
@@ -47,10 +47,18 @@ const getItem = ({ api_itemget = [], api_happening = {}, api_itemget_eo_comment 
 
 export function reducer(state = initState, { type, path, postBody, body }) {
   switch (type) {
+    /*
+       Clear sortie state if we have returned to port (api_port/port)
+       or if we have reloaded in the middle of a sorite, in which case api_req_member/get_incentive
+       is the first API that game calls.
+     */
     case '@@Response/kcsapi/api_port/port':
+    case '@@Request/kcsapi/api_req_member/get_incentive':
       return {
         ...state,
-        combinedFlag: body.api_combined_flag || 0,
+        combinedFlag:
+          // note that get_incentive doesn't have this field.
+          get(body, 'api_combined_flag', 0),
         sortieStatus: initState.sortieStatus,
         escapedPos: [],
         sortieMapId: 0,
@@ -156,7 +164,8 @@ export function reducer(state = initState, { type, path, postBody, body }) {
       ...get(body, 'api_hougeki1.api_at_type', []),
       ...get(body, 'api_hougeki2.api_at_type', []),
       ...get(body, 'api_hougeki3.api_at_type', []),
-    ].filter(a => a >= 100).length > 0
+      ...get(body, 'api_hougeki.api_sp_list', []),
+    ].filter((a) => a >= 100).length > 0
   ) {
     return {
       ...state,

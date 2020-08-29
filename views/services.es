@@ -4,9 +4,6 @@ import { isInGame } from 'views/utils/game-utils'
 import { observer, observe } from 'redux-observers'
 import { store } from 'views/create-store'
 import i18next from 'views/env-parts/i18next'
-import { ResourceNotifier } from './services/resource-notifier'
-import pluginManager from 'views/services/plugin-manager'
-import semver from 'semver'
 
 const proxy = remote.require('./lib/proxy')
 
@@ -28,7 +25,7 @@ import './services/battle-notify'
 import { gameRefreshPage, gameRefreshPageIgnoringCache, gameReload } from './services/utils'
 
 // Update server info
-const setUpdateServer = dispatch => {
+const setUpdateServer = (dispatch) => {
   const t = setInterval(() => {
     const { ip, num: id, name } = proxy.getServerInfo()
     if (window.getStore('info.server.ip') !== ip) {
@@ -44,7 +41,7 @@ const setUpdateServer = dispatch => {
   }, 1000)
 }
 const serverObserver = observer(
-  state => state.info.server.ip,
+  (state) => state.info.server.ip,
   (dispatch, current, previous) => {
     if (!current) {
       setUpdateServer(dispatch)
@@ -56,7 +53,7 @@ setUpdateServer(window.dispatch)
 observe(store, [serverObserver])
 
 // F5 & Ctrl+F5 & Alt+F5
-window.addEventListener('keydown', async e => {
+window.addEventListener('keydown', async (e) => {
   const isingame = await isInGame()
   if (
     (document.activeElement.tagName === 'WEBVIEW' && !isingame) ||
@@ -107,7 +104,7 @@ const exitPoi = () => {
   window.onbeforeunload = null
   window.close()
 }
-window.onbeforeunload = e => {
+window.onbeforeunload = (e) => {
   if (confirmExit || !config.get('poi.confirm.quit', false)) {
     exitPoi()
   } else {
@@ -138,11 +135,11 @@ class GameResponse {
   }
 }
 
-window.addEventListener('game.request', e => {
+window.addEventListener('game.request', (e) => {
   //const {method} = e.detail
   //const resPath = e.detail.path
 })
-window.addEventListener('game.response', e => {
+window.addEventListener('game.response', (e) => {
   const { method, body, postBody, time } = e.detail
   const resPath = e.detail.path
   if (dbg.extra('gameResponse').isEnabled()) {
@@ -155,16 +152,18 @@ window.addEventListener('game.response', e => {
 window.addEventListener('network.error', () => {
   error(i18next.t('Connection failed'), { dontReserve: true })
 })
-window.addEventListener('network.error.retry', e => {
+window.addEventListener('network.error.retry', (e) => {
   const { counter } = e.detail
   error(i18next.t('ConnectionFailedMsg', { count: counter }), { dontReserve: true })
 })
-window.addEventListener('network.invalid.result', e => {
+window.addEventListener('network.invalid.result', (e) => {
   const { code } = e.detail
   error(i18next.t('CatError', { code }), { dontReserve: true })
 })
 
-remote.getCurrentWebContents().on('devtools-opened', e => window.dispatchEvent(new Event('resize')))
+remote
+  .getCurrentWebContents()
+  .on('devtools-opened', (e) => window.dispatchEvent(new Event('resize')))
 stopNavigateAndHandleNewWindow(remote.getCurrentWebContents().id)
 
 remote.getCurrentWebContents().on('dom-ready', () => {
@@ -187,30 +186,3 @@ remote.getCurrentWindow().on('show', () => {
     getStore('layout.webview.ref').executeJavaScript('align()')
   }
 })
-
-// Initialize webview audio mute
-remote.getCurrentWebContents().on('did-attach-webview', (e, webContents) => {
-  setWebviewAudioMuted(webContents, config.get('poi.content.muted', false))
-})
-
-// workaround for audioMuted not working on game iframe navgated
-let flag = false
-ResourceNotifier.addListener('request', detail => {
-  if (detail.url.includes('version.json')) {
-    flag = true
-  }
-  if (detail.url.includes('mp3') && flag) {
-    flag = false
-    setWebviewAudioMuted(document.querySelector('webview'), config.get('poi.content.muted', false))
-  }
-})
-
-function setWebviewAudioMuted(w, muted) {
-  // workaround for audioMuted not working on game iframe navigated
-  if (muted) {
-    w.setAudioMuted(!muted)
-  }
-  setTimeout(() => {
-    w.setAudioMuted(muted)
-  }, 50)
-}

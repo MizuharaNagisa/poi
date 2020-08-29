@@ -13,6 +13,7 @@ import {
   size,
   isEqual,
 } from 'lodash'
+import moment from 'moment-timezone'
 
 import FileWriter from 'views/utils/file-writer'
 import { copyIfSame, arraySum } from 'views/utils/tools'
@@ -24,6 +25,19 @@ function questTrackingPath(admiralId) {
   return join(APPDATA_PATH, `quest_tracking_${admiralId}.cson`)
 }
 const questGoalsPath = join(ROOT, 'assets', 'data', 'quest_goal.cson')
+
+// as quests refresh at 5:00 Japan Time (UTC+9), equivalent to 0:00 UTC+4
+// for calculation convenience we shift Date object with a 4-hour offset
+const FOUR_HOUR_OFFSET = 1000 * 60 * 60 * 4
+
+const QUEST_REFRESH_ZERO = 331200000
+
+const ONE_DAY = 1000 * 60 * 60 * 24
+
+const ONE_WEEK = ONE_DAY * 7
+
+// A UTC+4 timezone without daylight saving
+export const ARMENIA_TIMEZONE = 'Asia/Yerevan'
 
 // Remove items from an object where its value doesn't satisfy `pred`.
 // The argument `obj` IS MODIFIED.
@@ -68,22 +82,21 @@ function updateObject(obj, items) {
   return obj
 }
 
-const QUEST_REFRESH_ZERO = 331200000
-const ONE_DAY = 86400000
 function isDifferentDay(time1, time2) {
-  const day1 = Math.floor((time1 - QUEST_REFRESH_ZERO) / ONE_DAY)
-  const day2 = Math.floor((time2 - QUEST_REFRESH_ZERO) / ONE_DAY)
+  const day1 = Math.floor((time1 + FOUR_HOUR_OFFSET) / ONE_DAY)
+  const day2 = Math.floor((time2 + FOUR_HOUR_OFFSET) / ONE_DAY)
   return day1 != day2
 }
 function isDifferentWeek(time1, time2) {
-  const week1 = Math.floor((time1 - QUEST_REFRESH_ZERO) / 604800000)
-  const week2 = Math.floor((time2 - QUEST_REFRESH_ZERO) / 604800000)
+  // UTC time to UTC+4, Jan 1st 1970 is Thursday so make a 4-days padding to ensure the breakpoint of a week is Monday 05:00:00
+  const week1 = Math.floor((time1 + FOUR_HOUR_OFFSET - ONE_DAY * 4) / ONE_WEEK)
+  const week2 = Math.floor((time2 + FOUR_HOUR_OFFSET - ONE_DAY * 4) / ONE_WEEK)
   return week1 != week2
 }
 function isDifferentMonth(time1, time2) {
   // UTC time to UTC+4
-  const date1 = new Date(time1 + 14400000)
-  const date2 = new Date(time2 + 14400000)
+  const date1 = new Date(time1 + FOUR_HOUR_OFFSET)
+  const date2 = new Date(time2 + FOUR_HOUR_OFFSET)
   return (
     date1.getUTCMonth() != date2.getUTCMonth() || date1.getUTCFullYear() != date2.getUTCFullYear()
   )
@@ -91,19 +104,18 @@ function isDifferentMonth(time1, time2) {
 
 // returns [q,m], where q uniquely identifies a Tanaka quarter,
 // and m <- [0,1,2] describes the relative month within that quarter.
-export const getTanakalendarQuarterMonth = time => {
-  const y = time.getUTCFullYear()
+// Tanaka quater starts from Feb
+export const getTanakalendarQuarterMonth = (time) => {
+  const y = moment(time).tz(ARMENIA_TIMEZONE).year()
   // yup, month apparently starts at 0
-  const m = time.getUTCMonth() + 1
+  const m = moment(time).tz(ARMENIA_TIMEZONE).month() + 1
+
   const v = y * 12 + m
   return [Math.floor(v / 3), v % 3]
 }
 
-const isDifferentQuarter = (time1, time2) => {
-  const date1 = new Date(time1 + 14400000)
-  const date2 = new Date(time2 + 14400000)
-  return !isEqual(getTanakalendarQuarterMonth(date1), getTanakalendarQuarterMonth(date2))
-}
+const isDifferentQuarter = (time1, time2) =>
+  !isEqual(getTanakalendarQuarterMonth(time1), getTanakalendarQuarterMonth(time2))
 
 function newQuestRecord(id, questGoals) {
   const questGoal = questGoals[id]
@@ -125,7 +137,7 @@ function newQuestRecord(id, questGoals) {
 }
 
 function formActiveQuests(activeQuestList = []) {
-  return fromPairs(activeQuestList.map(quest => [quest.detail.api_no, quest]))
+  return fromPairs(activeQuestList.map((quest) => [quest.detail.api_no, quest]))
 }
 
 // Remove the oldest from activeQuests so that only n items remain
@@ -138,7 +150,7 @@ function limitActiveQuests(activeQuests, n) {
 }
 
 function resetQuestRecordFactory(types, resetInterval) {
-  return questGoals => (q, id) => {
+  return (questGoals) => (q, id) => {
     if (!q || !questGoals[id]) return q
     const questGoal = questGoals[id]
     if (types.includes(parseInt(questGoal.type))) return // This record will be deleted
@@ -211,9 +223,9 @@ function updateQuestRecordFactory(records, activeQuests, questGoals) {
       if (goal.fuzzy) {
         // 'fuzzy' will also appears in Object.keys(goal)
         // use @ as separator because we could have battle_boss_win and battle_boss_win_s
-        match = Object.keys(goal).filter(x => x.startsWith(`${event}@`))
+        match = Object.keys(goal).filter((x) => x.startsWith(`${event}@`))
       }
-      forEach([...match, event], _event => {
+      forEach([...match, event], (_event) => {
         const subgoal = goal[_event]
         if (!subgoal) {
           return
@@ -345,13 +357,13 @@ function questTrackingReducer(state, { type, postBody, body, result }, store) {
       const slotitems = postBody.api_slotitem_ids || ''
       const ids = slotitems.split(',')
       // now it only supports gun quest, slotitemType2 = $item.api_type[2]
-      const typeCounts = countBy(ids, id => {
+      const typeCounts = countBy(ids, (id) => {
         const equipId = get(store, `info.equips.${id}.api_slotitem_id`)
         return get(store, `const.$equips.${equipId}.api_type.2`)
       })
 
       let flag = false
-      forEach(Object.keys(typeCounts), slotitemType2 => {
+      forEach(Object.keys(typeCounts), (slotitemType2) => {
         flag =
           flag ||
           updateQuestRecord(
@@ -478,7 +490,7 @@ export function reducer(state = initState, action, store) {
       const { api_exec_count: activeNum, api_list } = body
       let { activeQuests, records, questGoals } = state
       const now = Date.now()
-      ;(api_list || []).forEach(quest => {
+      ;(api_list || []).forEach((quest) => {
         if (typeof quest !== 'object') return
         const { api_state, api_no } = quest
         let record
@@ -572,14 +584,14 @@ export function schedualDailyRefresh(dispatch) {
   // eslint-disable-next-line no-console
   console.log('Scheduling daily refresh at %d (now %d)', QUEST_REFRESH_ZERO, Date.now())
   Scheduler.schedule(
-    time => {
+    (time) => {
       // TODO: Debug
       // eslint-disable-next-line no-console
       console.log('Daily refresh at %d scheduled at %d (now %d)', time, now, Date.now())
       dispatch(dailyRefresh(time))
     },
     {
-      time: QUEST_REFRESH_ZERO,
+      time: QUEST_REFRESH_ZERO, // TODO: this value has no effect here
       interval: ONE_DAY,
       allowImmediate: false,
     },
@@ -591,7 +603,7 @@ function processQuestRecords(records, activeQuests) {
   forEach(records, (record, recordId) => {
     if (!record || typeof record !== 'object') return
     const [count, required] = arraySum(
-      map(record, subgoal => {
+      map(record, (subgoal) => {
         if (!subgoal || typeof subgoal !== 'object') return [0, 0]
         return [subgoal.count, subgoal.required]
       }),

@@ -142,9 +142,9 @@ export function selectShipAvatarColor(ship, $ship, color, opt) {
   }
 }
 
-export const getSpeedLabel = speed => speedInterpretation[speed] || 'Unknown'
+export const getSpeedLabel = (speed) => speedInterpretation[speed] || 'Unknown'
 
-export const getSpeedStyle = speed => speedStyles[speed] || {}
+export const getSpeedStyle = (speed) => speedStyles[speed] || {}
 
 export function getStatusStyle(status) {
   if (status != null) {
@@ -295,9 +295,21 @@ export function getTyku(equipsData, landbaseStatus = 0) {
       } else if ([49].includes($equip.api_type[2])) {
         // 陸上偵察機
         if (landbaseStatus == 1) {
-          reconBonus = Math.max(reconBonus, 1.15)
+          tempTyku += Math.sqrt(onslot) * ($equip.api_tyku + (_equip.api_level || 0) * levelFactor)
+          basicTyku += Math.floor(Math.sqrt(onslot) * $equip.api_tyku)
+          minTyku += Math.floor(tempTyku + Math.sqrt(aircraftExpTable[tempAlv] / 10))
+          maxTyku += Math.floor(tempTyku + Math.sqrt((aircraftExpTable[tempAlv + 1] - 1) / 10))
+          if ($equip.api_saku >= 9) {
+            reconBonus = Math.max(reconBonus, 1.18)
+          } else {
+            reconBonus = Math.max(reconBonus, 1.15)
+          }
         } else if (landbaseStatus == 2) {
-          reconBonus = Math.max(reconBonus, 1.18)
+          if ($equip.api_saku >= 9) {
+            reconBonus = Math.max(reconBonus, 1.23)
+          } else {
+            reconBonus = Math.max(reconBonus, 1.18)
+          }
         }
       }
     }
@@ -503,7 +515,7 @@ export function getSaku33(shipsData, equipsData, teitokuLv, mapModifier = 1.0, s
 }
 
 // returns fleet's minimal api_soku value, returns 0 when all elements undefined
-export const getFleetSpeed = shipsData => ({
+export const getFleetSpeed = (shipsData) => ({
   speed:
     _(shipsData)
       .map(([ship = {}] = []) => ship.api_soku || Infinity)
@@ -518,7 +530,7 @@ export async function isInGame() {
       (await new Promise((resolve, reject) => {
         document
           .querySelector('webview')
-          .executeJavaScript("document.querySelector('embed') !== null", e => resolve(e))
+          .executeJavaScript("document.querySelector('embed') !== null", (e) => resolve(e))
       }))
     )
   } catch (e) {

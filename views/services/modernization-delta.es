@@ -6,19 +6,25 @@ import { Trans } from 'react-i18next'
 
 const { unzip, sum } = require('lodash')
 
+const REMAINING_UNKNOWN = -10000
+
 const nameStatuses = [
   i18next.t('Firepower'),
   i18next.t('Torpedo'),
   i18next.t('AntiAir'),
   i18next.t('Armor'),
   i18next.t('Luck'),
+  i18next.t('HP'),
+  i18next.t('ASW'),
 ]
+
+const possibleStatusNum = nameStatuses.length
 
 // Stores information in onRequest, used in onResponse
 let requestRecord = null
 
 // Multiplied by a factor of 5 to do operations in integers
-const luckProviders = id => {
+const luckProviders = (id) => {
   switch (id) {
     case 163:
       return 6 // Maruyu
@@ -28,41 +34,64 @@ const luckProviders = id => {
   return 0
 }
 
-const calcMaxDelta = lst => {
+const calcMaxDelta = (lst) => {
   const baseSum = sum(lst)
   // According to the formula provided by wiki
   return baseSum + Math.floor((baseSum + 1) / 5)
 }
 
 // Given sourceShips, the maximum statuses addable regardless of status cap
-const calcMaxDeltas = sourceShips => {
+const calcMaxDeltas = (sourceShips) => {
   const maxFourDeltas = unzip(
-    sourceShips.map(id => (window.$ships[id] || {}).api_powup || [0, 0, 0, 0]),
-  ).map(delta => calcMaxDelta(delta))
-  const maxLuck = Math.ceil(sum(sourceShips.map(id => luckProviders(id))) / 5 - 0.0001)
-  return maxFourDeltas.concat([maxLuck])
+    sourceShips.map((id) => (window.$ships[id] || {}).api_powup || [0, 0, 0, 0]),
+  ).map((delta) => calcMaxDelta(delta))
+  const maxLuck = Math.ceil(sum(sourceShips.map((id) => luckProviders(id))) / 5 - 0.0001)
+  return maxFourDeltas.concat([maxLuck, 0, 0])
 }
 
-const apiStatuses = ['api_houg', 'api_raig', 'api_tyku', 'api_souk', 'api_luck']
+// ... I have no idea how to get potential max HP and max ASW
+const apiStatuses = [
+  'api_houg',
+  'api_raig',
+  'api_tyku',
+  'api_souk',
+  'api_luck',
+  '_NODATA_',
+  '_NODATA_',
+]
 
-const calcRemainingStatuses = ship =>
-  [...Array(5).keys()].map(
-    i => ship[apiStatuses[i]][1] - (ship[apiStatuses[i]][0] + ship.api_kyouka[i]),
-  )
+const calcRemainingStatuses = (ship) =>
+  [...Array(possibleStatusNum).keys()].map((i) => {
+    const statusPair = ship[apiStatuses[i]]
+    if (!statusPair) {
+      return REMAINING_UNKNOWN
+    }
+    return statusPair[1] - (statusPair[0] + ship.api_kyouka[i])
+  })
+
+const formatRemaining = (remaining) => {
+  if (remaining == REMAINING_UNKNOWN) {
+    return '?'
+  } else if (remaining > 0) {
+    return `+${remaining}`
+  } else {
+    return 'MAX'
+  }
+}
 
 const calcDisplayText = (targetShipBefore, sourceShips) => {
   // Clone it because it may have been modified on response
   const kyoukaBefore = targetShipBefore.api_kyouka.slice()
   // Run unnecessary calculation in a promise to minimize the blocking of request
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     const maxDeltas = calcMaxDeltas(sourceShips)
-    return resolve(targetShipAfter => {
+    return resolve((targetShipAfter) => {
       const kyoukaAfter = targetShipAfter.api_kyouka
       const remainingAfter = calcRemainingStatuses(targetShipAfter)
       return (
         <span>
           <Trans>Modernization succeeded</Trans>
-          {[...Array(5).keys()].map(i => {
+          {[...Array(possibleStatusNum).keys()].map((i) => {
             const delta = kyoukaAfter[i] - kyoukaBefore[i]
             const maxDelta = maxDeltas[i]
             const remaining = remainingAfter[i]
@@ -74,12 +103,12 @@ const calcDisplayText = (targetShipBefore, sourceShips) => {
                 <span key={i} style={{ margin: '0 6px' }}>
                   {nameStatuses[i]}
                   <FontAwesome
-                    name={remaining <= 0 || delta == maxDelta ? 'angle-double-up' : 'angle-up'}
+                    name={remaining <= 0 || delta >= maxDelta ? 'angle-double-up' : 'angle-up'}
                     style={{ margin: '0 3px' }}
                   />
                   {delta}/
                   <span style={{ fontSize: '80%', verticalAlign: 'baseline' }}>
-                    {remaining <= 0 ? 'MAX' : `+${remaining}`}
+                    {formatRemaining(remaining)}
                   </span>
                 </span>
               )
@@ -91,25 +120,25 @@ const calcDisplayText = (targetShipBefore, sourceShips) => {
   })
 }
 
-const onRequest = e => {
+const onRequest = (e) => {
   if (e.detail.path === '/kcsapi/api_req_kaisou/powerup') {
     const { api_id, api_id_items } = e.detail.body
     // Read the status before modernization, use a copy because map's callback
     // may be delayed to when ship is deleted from _ships
-    const sourceShips = api_id_items.split(',').map(id_item => {
+    const sourceShips = api_id_items.split(',').map((id_item) => {
       return (window._ships[id_item] || {}).api_ship_id
     })
     requestRecord = calcDisplayText(window._ships[api_id], sourceShips)
   }
 }
 
-const onResponse = e => {
+const onResponse = (e) => {
   if (e.detail.path === '/kcsapi/api_req_kaisou/powerup') {
     // Read the status after modernization
     if (e.detail.body.api_powerup_flag) {
       const target = e.detail.body.api_ship
       if (requestRecord != null) {
-        requestRecord.then(calcText =>
+        requestRecord.then((calcText) =>
           setTimeout(
             window.success,
             100,
